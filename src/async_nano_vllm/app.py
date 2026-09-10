@@ -1,11 +1,11 @@
 import time
 import uuid
+import threading
 
 from fastapi import FastAPI
 from pydantic import BaseModel
 
 from nanovllm import LLM, SamplingParams
-
 
 MODEL_PATH = "/models/Qwen3-0.6B"
 MODEL_NAME = "Qwen/Qwen3-0.6B"
@@ -61,4 +61,29 @@ def completion(request: CompletionRequest):
             "generation_time_ms": (end - start) * 1000,
             "output_tokens": len(output["token_ids"]),
         },
+    }
+
+
+@app.get("/probe")
+def probe():
+
+    thread_id = threading.get_ident()
+
+    start = time.perf_counter()
+
+    print(
+        f"START thread={thread_id} " f"time={start:.6f}",
+    )
+
+    time.sleep(2)
+
+    end = time.perf_counter()
+
+    print(
+        f"END   thread={thread_id} " f"time={end:.6f}",
+    )
+
+    return {
+        "thread_id": thread_id,
+        "duration_ms": (end - start) * 1000,
     }

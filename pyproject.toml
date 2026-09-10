@@ -11,6 +11,7 @@ dependencies = [
     "flash-attn==2.8.3.post1+cu.12.8.torch.2.8",
     "nano-vllm",
     "pydantic>=2.13.5",
+    "requests>=2.34.2",
     "torch==2.8.0",
     "uvicorn[standard]>=0.52.4",
 ]

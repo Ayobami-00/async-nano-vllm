@@ -1,9 +1,11 @@
+import time
 import uuid
 
 from fastapi import FastAPI
 from pydantic import BaseModel
 
 from nanovllm import LLM, SamplingParams
+
 
 MODEL_PATH = "/models/Qwen3-0.6B"
 MODEL_NAME = "Qwen/Qwen3-0.6B"
@@ -34,11 +36,15 @@ def completion(request: CompletionRequest):
         max_tokens=request.max_tokens,
     )
 
+    start = time.perf_counter()
+
     output = llm.generate(
         [request.prompt],
         sampling_params,
         use_tqdm=False,
     )[0]
+
+    end = time.perf_counter()
 
     return {
         "id": request_id,
@@ -51,4 +57,8 @@ def completion(request: CompletionRequest):
                 "finish_reason": "stop",
             }
         ],
+        "_debug": {
+            "generation_time_ms": (end - start) * 1000,
+            "output_tokens": len(output["token_ids"]),
+        },
     }

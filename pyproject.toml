@@ -8,10 +8,30 @@ authors = [
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.141.1",
+    "flash-attn==2.8.3.post1+cu.12.8.torch.2.8",
+    "nano-vllm",
     "pydantic>=2.13.5",
+    "torch==2.8.0",
     "uvicorn[standard]>=0.52.4",
 ]
 
 [build-system]
 requires = ["uv_build>=0.11.31,<0.12.0"]
 build-backend = "uv_build"
+
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+flash-attn = { index = "astral-cu128" }
+nano-vllm = { git = "https://github.com/GeeeekExplorer/nano-vllm.git" }
+
+[[tool.uv.index]]
+name = "astral-cu128"
+url = "https://wheels.astral.sh/simple/cu128/"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+

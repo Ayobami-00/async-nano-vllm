@@ -2,6 +2,8 @@ import time
 import uuid
 import threading
 from threading import Lock
+from dataclasses import dataclass
+import asyncio
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -28,6 +30,17 @@ class CompletionRequest(BaseModel):
     prompt: str
     max_tokens: int = 128
     temperature: float = 0.1
+
+
+@dataclass
+class InferenceRequest:
+    request_id: str
+    prompt: str
+    sampling_params: SamplingParams
+    arrival_time: float
+
+
+incoming_queue: asyncio.Queue[InferenceRequest] = asyncio.Queue()
 
 
 @app.post("/v1/completions")
@@ -97,4 +110,30 @@ def probe():
     return {
         "thread_id": thread_id,
         "duration_ms": (end - start) * 1000,
+    }
+
+
+@app.post("/v1/submit", status_code=202)
+async def submit(request: CompletionRequest):
+
+    request_id = f"cmpl-{uuid.uuid4().hex}"
+
+    sampling_params = SamplingParams(
+        temperature=request.temperature,
+        max_tokens=request.max_tokens,
+    )
+
+    inference_request = InferenceRequest(
+        request_id=request_id,
+        prompt=request.prompt,
+        sampling_params=sampling_params,
+        arrival_time=time.perf_counter(),
+    )
+
+    await incoming_queue.put(inference_request)
+
+    return {
+        "id": request_id,
+        "status": "queued",
+        "queue_depth": incoming_queue.qsize(),
     }

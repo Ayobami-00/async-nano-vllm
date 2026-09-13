@@ -1,6 +1,7 @@
 import time
 import uuid
 import threading
+from threading import Lock
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -19,6 +20,8 @@ llm = LLM(
     tensor_parallel_size=1,
 )
 
+engine_lock = Lock()
+
 
 class CompletionRequest(BaseModel):
     model: str = MODEL_NAME
@@ -36,15 +39,21 @@ def completion(request: CompletionRequest):
         max_tokens=request.max_tokens,
     )
 
-    start = time.perf_counter()
+    request_start = time.perf_counter()
 
-    output = llm.generate(
-        [request.prompt],
-        sampling_params,
-        use_tqdm=False,
-    )[0]
+    with engine_lock:
 
-    end = time.perf_counter()
+        engine_start = time.perf_counter()
+
+        output = llm.generate(
+            [request.prompt],
+            sampling_params,
+            use_tqdm=False,
+        )[0]
+
+        engine_end = time.perf_counter()
+
+    request_end = time.perf_counter()
 
     return {
         "id": request_id,
@@ -58,7 +67,9 @@ def completion(request: CompletionRequest):
             }
         ],
         "_debug": {
-            "generation_time_ms": (end - start) * 1000,
+            "engine_wait_ms": (engine_start - request_start) * 1000,
+            "generation_time_ms": (engine_end - engine_start) * 1000,
+            "handler_time_ms": (request_end - request_start) * 1000,
             "output_tokens": len(output["token_ids"]),
         },
     }

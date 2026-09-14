@@ -1,9 +1,9 @@
+import asyncio
+import threading
 import time
 import uuid
-import threading
-from threading import Lock
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
-import asyncio
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -14,15 +14,11 @@ MODEL_PATH = "/models/Qwen3-0.6B"
 MODEL_NAME = "Qwen/Qwen3-0.6B"
 
 
-app = FastAPI()
-
 llm = LLM(
     MODEL_PATH,
     enforce_eager=True,
     tensor_parallel_size=1,
 )
-
-engine_lock = Lock()
 
 
 class CompletionRequest(BaseModel):
@@ -41,6 +37,65 @@ class InferenceRequest:
 
 
 incoming_queue: asyncio.Queue[InferenceRequest] = asyncio.Queue()
+
+
+async def engine_loop():
+
+    while True:
+
+        if llm.is_finished():
+
+            request = await incoming_queue.get()
+
+            llm.add_request(
+                request.prompt,
+                request.sampling_params,
+            )
+
+            incoming_queue.task_done()
+
+        while True:
+            try:
+                request = incoming_queue.get_nowait()
+
+            except asyncio.QueueEmpty:
+                break
+
+            llm.add_request(
+                request.prompt,
+                request.sampling_params,
+            )
+
+            incoming_queue.task_done()
+
+        outputs, _ = llm.step()
+
+        for seq_id, token_ids in outputs:
+            text = llm.tokenizer.decode(token_ids)
+            print(f"completed seq={seq_id}: {text!r}")
+
+        await asyncio.sleep(0)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    engine_task = asyncio.create_task(
+        engine_loop(),
+        name="nano-vllm-engine-loop",
+    )
+
+    try:
+        yield
+    finally:
+        engine_task.cancel()
+        try:
+            await engine_task
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/v1/completions")

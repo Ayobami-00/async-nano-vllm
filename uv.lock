@@ -51,7 +51,7 @@ dependencies = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "flash-attn", specifier = "==2.8.3.post1+cu.12.8.torch.2.8", index = "https://wheels.astral.sh/simple/cu128/" },
-    { name = "nano-vllm", git = "https://github.com/GeeeekExplorer/nano-vllm.git" },
+    { name = "nano-vllm", git = "https://github.com/Ayobami-00/nano-vllm.git?branch=async-nano-vllm" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "requests", specifier = ">=2.34.2" },
     { name = "torch", specifier = "==2.8.0", index = "https://download.pytorch.org/whl/cu128" },
@@ -342,7 +342,7 @@ wheels = [
 [[package]]
 name = "nano-vllm"
 version = "0.2.0"
-source = { git = "https://github.com/GeeeekExplorer/nano-vllm.git#bb823b3e06983d71485a8e1f23715ebd87d98ef8" }
+source = { git = "https://github.com/Ayobami-00/nano-vllm.git?branch=async-nano-vllm#bb823b3e06983d71485a8e1f23715ebd87d98ef8" }
 dependencies = [
     { name = "flash-attn" },
     { name = "torch" },

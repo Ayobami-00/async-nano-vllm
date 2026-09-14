@@ -24,7 +24,7 @@ build-backend = "uv_build"
 [tool.uv.sources]
 torch = { index = "pytorch-cu128" }
 flash-attn = { index = "astral-cu128" }
-nano-vllm = { git = "https://github.com/GeeeekExplorer/nano-vllm.git" }
+nano-vllm = { git = "https://github.com/Ayobami-00/nano-vllm.git", branch = "async-nano-vllm" }
 
 [[tool.uv.index]]
 name = "astral-cu128"

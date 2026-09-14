@@ -4,7 +4,10 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+import json
 
+from collections.abc import AsyncIterator
+from fastapi.responses import StreamingResponse
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -29,16 +32,27 @@ class CompletionRequest(BaseModel):
 
 
 @dataclass
+class StepOutput:
+    seq_id: int
+    token_id: int
+    finished: bool
+
+
+@dataclass
 class InferenceRequest:
     request_id: str
     prompt: str
     sampling_params: SamplingParams
     arrival_time: float
-    result_future: asyncio.Future
+    output_queue: asyncio.Queue[StepOutput]
 
 
 incoming_queue: asyncio.Queue[InferenceRequest] = asyncio.Queue()
-pending_results: dict[int, asyncio.Future] = {}
+
+output_queues: dict[
+    int,
+    asyncio.Queue[StepOutput],
+] = {}
 
 
 async def engine_loop():
@@ -59,7 +73,7 @@ async def engine_loop():
                 request.sampling_params,
             )
 
-            pending_results[seq_id] = request.result_future
+            output_queues[seq_id] = request.output_queue
 
             incoming_queue.task_done()
 
@@ -80,7 +94,7 @@ async def engine_loop():
                 request.sampling_params,
             )
 
-            pending_results[seq_id] = request.result_future
+            output_queues[seq_id] = request.output_queue
 
             incoming_queue.task_done()
 
@@ -91,22 +105,43 @@ async def engine_loop():
             f"engine_finished={llm.is_finished()}"
         )
 
-        for seq_id, token_ids in outputs:
-            future = pending_results.pop(seq_id)
-            text = llm.tokenizer.decode(token_ids)
+        for output in outputs:
+            output_queue = output_queues[output.seq_id]
 
-            print(f"completed seq={seq_id}: {text!r}")
+            await output_queue.put(output)
 
-            if not future.cancelled():
-
-                future.set_result(
-                    {
-                        "text": text,
-                        "token_ids": token_ids,
-                    }
-                )
+            if output.finished:
+                output_queues.pop(output.seq_id)
 
         await asyncio.sleep(0)
+
+
+async def generate(
+    request_id: str,
+    prompt: str,
+    sampling_params: SamplingParams,
+) -> AsyncIterator[StepOutput]:
+
+    output_queue: asyncio.Queue[StepOutput] = asyncio.Queue()
+
+    inference_request = InferenceRequest(
+        request_id=request_id,
+        prompt=prompt,
+        sampling_params=sampling_params,
+        arrival_time=time.perf_counter(),
+        output_queue=output_queue,
+    )
+
+    await incoming_queue.put(inference_request)
+
+    while True:
+
+        output = await output_queue.get()
+
+        yield output
+
+        if output.finished:
+            break
 
 
 @asynccontextmanager
@@ -139,19 +174,16 @@ async def completion(request: CompletionRequest):
         max_tokens=request.max_tokens,
     )
 
-    loop = asyncio.get_running_loop()
-    result_future = loop.create_future()
+    token_ids = []
 
-    inference_request = InferenceRequest(
-        request_id=request_id,
-        prompt=request.prompt,
-        sampling_params=sampling_params,
-        arrival_time=time.perf_counter(),
-    )
+    async for output in generate(
+        request_id,
+        request.prompt,
+        sampling_params,
+    ):
+        token_ids.append(output.token_id)
 
-    await incoming_queue.put(inference_request)
-
-    result = await result_future
+    text = llm.tokenizer.decode(token_ids)
 
     return {
         "id": request_id,
@@ -160,7 +192,7 @@ async def completion(request: CompletionRequest):
         "choices": [
             {
                 "index": 0,
-                "text": result["text"],
+                "text": text,
                 "finish_reason": "stop",
             }
         ],

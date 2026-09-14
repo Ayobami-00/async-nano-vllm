@@ -47,6 +47,11 @@ async def engine_loop():
 
             request = await incoming_queue.get()
 
+            print(
+                f"admitted request={request.request_id} "
+                f"queue_depth={incoming_queue.qsize()}"
+            )
+
             llm.add_request(
                 request.prompt,
                 request.sampling_params,
@@ -61,6 +66,11 @@ async def engine_loop():
             except asyncio.QueueEmpty:
                 break
 
+            print(
+                f"admitted request={request.request_id} "
+                f"queue_depth={incoming_queue.qsize()}"
+            )
+
             llm.add_request(
                 request.prompt,
                 request.sampling_params,
@@ -69,6 +79,11 @@ async def engine_loop():
             incoming_queue.task_done()
 
         outputs, _ = llm.step()
+
+        print(
+            f"external_queue={incoming_queue.qsize()} "
+            f"engine_finished={llm.is_finished()}"
+        )
 
         for seq_id, token_ids in outputs:
             text = llm.tokenizer.decode(token_ids)

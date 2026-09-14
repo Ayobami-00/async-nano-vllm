@@ -34,9 +34,11 @@ class InferenceRequest:
     prompt: str
     sampling_params: SamplingParams
     arrival_time: float
+    result_future: asyncio.Future
 
 
 incoming_queue: asyncio.Queue[InferenceRequest] = asyncio.Queue()
+pending_results: dict[int, asyncio.Future] = {}
 
 
 async def engine_loop():
@@ -52,10 +54,12 @@ async def engine_loop():
                 f"queue_depth={incoming_queue.qsize()}"
             )
 
-            llm.add_request(
+            seq_id = llm.add_request(
                 request.prompt,
                 request.sampling_params,
             )
+
+            pending_results[seq_id] = request.result_future
 
             incoming_queue.task_done()
 
@@ -71,10 +75,12 @@ async def engine_loop():
                 f"queue_depth={incoming_queue.qsize()}"
             )
 
-            llm.add_request(
+            seq_id = llm.add_request(
                 request.prompt,
                 request.sampling_params,
             )
+
+            pending_results[seq_id] = request.result_future
 
             incoming_queue.task_done()
 
@@ -86,8 +92,19 @@ async def engine_loop():
         )
 
         for seq_id, token_ids in outputs:
+            future = pending_results.pop(seq_id)
             text = llm.tokenizer.decode(token_ids)
+
             print(f"completed seq={seq_id}: {text!r}")
+
+            if not future.cancelled():
+
+                future.set_result(
+                    {
+                        "text": text,
+                        "token_ids": token_ids,
+                    }
+                )
 
         await asyncio.sleep(0)
 
@@ -114,7 +131,7 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/v1/completions")
-def completion(request: CompletionRequest):
+async def completion(request: CompletionRequest):
     request_id = f"cmpl-{uuid.uuid4().hex}"
 
     sampling_params = SamplingParams(
@@ -122,76 +139,8 @@ def completion(request: CompletionRequest):
         max_tokens=request.max_tokens,
     )
 
-    request_start = time.perf_counter()
-
-    with engine_lock:
-
-        engine_start = time.perf_counter()
-
-        output = llm.generate(
-            [request.prompt],
-            sampling_params,
-            use_tqdm=False,
-        )[0]
-
-        engine_end = time.perf_counter()
-
-    request_end = time.perf_counter()
-
-    return {
-        "id": request_id,
-        "object": "text_completion",
-        "model": request.model,
-        "choices": [
-            {
-                "index": 0,
-                "text": output["text"],
-                "finish_reason": "stop",
-            }
-        ],
-        "_debug": {
-            "engine_wait_ms": (engine_start - request_start) * 1000,
-            "generation_time_ms": (engine_end - engine_start) * 1000,
-            "handler_time_ms": (request_end - request_start) * 1000,
-            "output_tokens": len(output["token_ids"]),
-        },
-    }
-
-
-@app.get("/probe")
-def probe():
-
-    thread_id = threading.get_ident()
-
-    start = time.perf_counter()
-
-    print(
-        f"START thread={thread_id} " f"time={start:.6f}",
-    )
-
-    time.sleep(2)
-
-    end = time.perf_counter()
-
-    print(
-        f"END   thread={thread_id} " f"time={end:.6f}",
-    )
-
-    return {
-        "thread_id": thread_id,
-        "duration_ms": (end - start) * 1000,
-    }
-
-
-@app.post("/v1/submit", status_code=202)
-async def submit(request: CompletionRequest):
-
-    request_id = f"cmpl-{uuid.uuid4().hex}"
-
-    sampling_params = SamplingParams(
-        temperature=request.temperature,
-        max_tokens=request.max_tokens,
-    )
+    loop = asyncio.get_running_loop()
+    result_future = loop.create_future()
 
     inference_request = InferenceRequest(
         request_id=request_id,
@@ -202,8 +151,17 @@ async def submit(request: CompletionRequest):
 
     await incoming_queue.put(inference_request)
 
+    result = await result_future
+
     return {
         "id": request_id,
-        "status": "queued",
-        "queue_depth": incoming_queue.qsize(),
+        "object": "text_completion",
+        "model": request.model,
+        "choices": [
+            {
+                "index": 0,
+                "text": result["text"],
+                "finish_reason": "stop",
+            }
+        ],
     }

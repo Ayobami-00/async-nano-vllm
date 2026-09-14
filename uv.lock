@@ -342,7 +342,7 @@ wheels = [
 [[package]]
 name = "nano-vllm"
 version = "0.2.0"
-source = { git = "https://github.com/Ayobami-00/nano-vllm.git?branch=async-nano-vllm#bb823b3e06983d71485a8e1f23715ebd87d98ef8" }
+source = { git = "https://github.com/Ayobami-00/nano-vllm.git?branch=async-nano-vllm#a8bec7e87bede04c9632fc7e9bf74a5c2dbddfad" }
 dependencies = [
     { name = "flash-attn" },
     { name = "torch" },
